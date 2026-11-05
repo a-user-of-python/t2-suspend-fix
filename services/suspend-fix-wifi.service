@@ -1,0 +1,33 @@
+[Unit]
+# t2-suspend-fix: unload the Broadcom Wi-Fi driver (brcmfmac) before suspend
+# and reload it after resume.
+#
+# Why: on T2 Macs the BCM4364/BCM4377 firmware can fail to acknowledge the
+# D3 (sleep) transition, leaving Wi-Fi associated-but-dead or every firmware
+# command timing out after resume. Taking the driver out before sleep and
+# bringing it back after wake is the long-standing community workaround
+# (deqrocks' T2Linux-Suspend-Fix units: suspend-wifi-unload.service /
+# resume-wifi-reload.service). Newer kernels carry an in-driver fix for
+# this (brcmfmac missing-D3-ACK reload), so only install this service if
+# Wi-Fi is actually broken after resume on your kernel.
+#
+# How it works: the unit is wanted by sleep.target and starts BEFORE it,
+# so ExecStart runs on the way into suspend. systemd stops the unit during
+# resume, so ExecStop runs on the way out. The leading "-" on each command
+# makes failures non-fatal (e.g. module already unloaded).
+Description=T2 suspend fix: unload brcmfmac Wi-Fi before suspend, reload on resume
+Before=sleep.target
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Pre-suspend: take the Wi-Fi driver out.
+ExecStart=-/usr/sbin/modprobe -r brcmfmac
+# Post-resume: wait for the T2 bridge / USB host to power up (a resume race
+# here is documented on T2 Macs), then bring Wi-Fi back.
+ExecStop=/usr/bin/sleep 3
+ExecStop=-/usr/sbin/modprobe brcmfmac
+
+[Install]
+WantedBy=sleep.target

@@ -1,0 +1,35 @@
+[Unit]
+# t2-suspend-fix: LEGACY apple-bce stack only. Do NOT use with t2bce kernels.
+#
+# Why: with the old apple-bce driver, suspend/resume can crash inside the
+# driver (page faults in bce_vhci_drop_endpoint) and the t2linux wiki's
+# state page notes that "suspend works when [apple-bce is] disabled".
+# The documented remedy on that stack is to force-unload apple-bce before
+# suspend and reload it after resume. Force-unload requires a kernel built
+# with CONFIG_MODULE_FORCE_UNLOAD=y (the t2linux kernels are).
+#
+# The current t2linux kernels use t2bce instead, which handles suspend
+# internally; the wiki explicitly says NOT to unload t2bce modules before
+# suspend (it tears down live BridgeOS queues). install.sh only installs
+# this unit when it detects the legacy apple_bce module loaded.
+#
+# Mechanics: same sleep.target pattern as suspend-fix-wifi.service —
+# ExecStart runs pre-suspend, ExecStop runs post-resume.
+Description=T2 suspend fix (legacy apple-bce): unload apple-bce before suspend, reload on resume
+Before=sleep.target
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Pre-suspend: force-unload the legacy BCE driver (documented command).
+ExecStart=-/usr/sbin/rmmod -f apple-bce
+# Post-resume: give the T2 bridge time to power up, then reload the driver
+# (keyboard / trackpad / Touch Bar come back with it). appletbdrm is the
+# Touch Bar display driver on this stack; "-" makes it harmless if absent.
+ExecStop=/usr/bin/sleep 3
+ExecStop=-/usr/sbin/modprobe apple_bce
+ExecStop=-/usr/sbin/modprobe appletbdrm
+
+[Install]
+WantedBy=sleep.target
